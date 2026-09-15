@@ -165,6 +165,28 @@
           </div>
           <div class="heading-actions">
             <button
+              class="btn btn-light border btn-sm px-3"
+              id="exportBtn"
+              type="button"
+              title="Simpan seluruh data ke file JSON"
+            >
+              <i class="bi bi-download me-1"></i> Export Data
+            </button>
+            <button
+              class="btn btn-light border btn-sm px-3"
+              id="importBtn"
+              type="button"
+              title="Muat data dari file JSON hasil export"
+            >
+              <i class="bi bi-upload me-1"></i> Import Data
+            </button>
+            <input
+              type="file"
+              id="importFile"
+              accept="application/json,.json"
+              hidden
+            />
+            <button
               class="btn btn-danger-soft btn-sm px-3"
               id="resetTopBtn"
               type="button"
@@ -248,6 +270,101 @@
       </section>
 
       <section class="summary" id="dashboard">
+        <div class="card-heading">
+          <div>
+            <h2>Ringkasan</h2>
+            <p>
+              Total hari, jam, uang makan, dan penerimaan lembur. Defaultnya
+              seluruh data — pilih rentang tanggal untuk periode tertentu,
+              misalnya satu periode gajian.
+            </p>
+          </div>
+          <div class="heading-actions">
+            <div class="date-range-picker" id="dateRangePicker">
+              <button
+                type="button"
+                class="date-range-trigger"
+                id="dateRangeTrigger"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <span class="date-range-trigger-icon"
+                  ><i class="bi bi-calendar3"></i
+                ></span>
+                <span id="dateRangeTriggerText">Semua Data</span>
+                <i class="bi bi-chevron-down date-range-trigger-caret"></i>
+              </button>
+              <button
+                type="button"
+                class="date-range-clear d-none"
+                id="btnClearDateRange"
+                title="Hapus rentang tanggal"
+              >
+                <i class="bi bi-x-lg"></i>
+              </button>
+
+              <!-- Sumber kebenaran yang dibaca periodRecords() di app.js;
+                   disembunyikan (.d-none) -- yang tampil cuma tombol
+                   pemicu & panel kalendernya. -->
+              <input type="date" id="periodStart" class="d-none" />
+              <input type="date" id="periodEnd" class="d-none" />
+
+              <div class="drp-popover d-none" id="dateRangePopover">
+                <div class="drp-quick-row">
+                  <button
+                    type="button"
+                    class="quick-date-btn"
+                    data-preset="thisMonth"
+                  >
+                    Bulan Ini
+                  </button>
+                  <button
+                    type="button"
+                    class="quick-date-btn"
+                    data-preset="lastMonth"
+                  >
+                    Bulan Lalu
+                  </button>
+                </div>
+                <div class="drp-header">
+                  <button
+                    type="button"
+                    class="drp-nav"
+                    id="drpNavPrev"
+                    aria-label="Bulan sebelumnya"
+                  >
+                    <i class="bi bi-chevron-left"></i>
+                  </button>
+                  <div class="drp-months">
+                    <div class="drp-month-label" id="drpMonthLabel0"></div>
+                    <div class="drp-month-label" id="drpMonthLabel1"></div>
+                  </div>
+                  <button
+                    type="button"
+                    class="drp-nav"
+                    id="drpNavNext"
+                    aria-label="Bulan berikutnya"
+                  >
+                    <i class="bi bi-chevron-right"></i>
+                  </button>
+                </div>
+                <div class="drp-grids" id="drpGrids">
+                  <div class="drp-grid" id="drpGrid0"></div>
+                  <div class="drp-grid drp-grid--second" id="drpGrid1"></div>
+                </div>
+                <div class="drp-footer">
+                  <button type="button" class="drp-reset" id="drpReset">
+                    Reset
+                  </button>
+                  <button type="button" class="drp-apply" id="drpApply">
+                    Terapkan
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="summary-grid">
           <div class="app-card summary-card">
             <div class="summary-top">

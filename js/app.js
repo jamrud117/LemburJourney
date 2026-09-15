@@ -31,6 +31,29 @@ const applySalaryBtn = document.getElementById("applySalaryBtn");
 const previewStrip = document.getElementById("previewStrip");
 const previewText = document.getElementById("previewText");
 
+const periodStartInput = document.getElementById("periodStart");
+const periodEndInput = document.getElementById("periodEnd");
+
+const dateRangePicker = document.getElementById("dateRangePicker");
+const dateRangeTrigger = document.getElementById("dateRangeTrigger");
+const dateRangeTriggerText = document.getElementById("dateRangeTriggerText");
+const btnClearDateRange = document.getElementById("btnClearDateRange");
+const dateRangePopover = document.getElementById("dateRangePopover");
+const drpMonthLabel0 = document.getElementById("drpMonthLabel0");
+const drpMonthLabel1 = document.getElementById("drpMonthLabel1");
+const drpGrid0 = document.getElementById("drpGrid0");
+const drpGrid1 = document.getElementById("drpGrid1");
+const drpGrids = document.getElementById("drpGrids");
+const drpNavPrev = document.getElementById("drpNavPrev");
+const drpNavNext = document.getElementById("drpNavNext");
+const drpApplyBtn = document.getElementById("drpApply");
+const drpResetBtn = document.getElementById("drpReset");
+const quickDateButtons = document.querySelectorAll(".quick-date-btn[data-preset]");
+
+const exportBtn = document.getElementById("exportBtn");
+const importBtn = document.getElementById("importBtn");
+const importFileInput = document.getElementById("importFile");
+
 const editModalEl = document.getElementById("editModal");
 const manualBackdrop = document.getElementById("manualBackdrop");
 const editDateInput = document.getElementById("editDate");
@@ -65,6 +88,12 @@ function loadSalary() {
 
 function persistSalary() {
   localStorage.setItem(SALARY_KEY, String(baseSalary));
+}
+
+function makeId() {
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : Date.now() + "-" + Math.random();
 }
 
 function weekend(date) {
@@ -303,22 +332,47 @@ function render() {
     });
   }
 
-  const totalHours = records.reduce((s, r) => s + Number(r.hours), 0);
-  const totalWage = records.reduce(
-    (s, r) => s + calculate(r.hours, isHoliday(r.date, r.holiday), salaryOf(r)),
+  persist();
+  renderRates();
+  renderPreview();
+  renderSummary();
+}
+
+// Rentang tanggal bersifat inklusif di kedua ujung; batas yang dikosongkan
+// dianggap tak terbatas (mis. "dari" kosong = sejak data paling lama).
+function inPeriod(date, start, end) {
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
+
+function periodRecords() {
+  const start = periodStartInput.value;
+  const end = periodEndInput.value;
+  if (!start && !end) return records;
+  return records.filter((r) => inPeriod(r.date, start, end));
+}
+
+// Satu-satunya kartu ringkasan: defaultnya seluruh data (periodStart/End
+// kosong), atau disaring ke rentang yang sedang diterapkan lewat
+// date-range-picker di bawah.
+function renderSummary() {
+  const rows = periodRecords();
+
+  const totalHours = rows.reduce((s, r) => s + Number(r.hours), 0);
+  const totalWage = rows.reduce(
+    (s, r) =>
+      s + calculate(r.hours, isHoliday(r.date, r.holiday), salaryOf(r)),
     0,
   );
-  const mealDays = records.filter((r) => mealAllowance(r.hours) > 0).length;
+  const mealDays = rows.filter((r) => mealAllowance(r.hours) > 0).length;
   const totalMeal = mealDays * MEAL_ALLOWANCE;
+  const holidayDays = rows.filter((r) => isHoliday(r.date, r.holiday)).length;
+  const weekdayDays = rows.length - holidayDays;
+  const averageHours = rows.length ? totalHours / rows.length : 0;
 
-  const holidayDays = records.filter((r) =>
-    isHoliday(r.date, r.holiday),
-  ).length;
-  const weekdayDays = records.length - holidayDays;
-  const averageHours = records.length ? totalHours / records.length : 0;
-
-  document.getElementById("totalDays").textContent = records.length;
-  document.getElementById("totalDaysSub").textContent = records.length
+  document.getElementById("totalDays").textContent = rows.length;
+  document.getElementById("totalDaysSub").textContent = rows.length
     ? `${weekdayDays} weekday · ${holidayDays} libur`
     : "Belum ada pencatatan";
   document.getElementById("totalHours").textContent = Number.isInteger(
@@ -326,7 +380,7 @@ function render() {
   )
     ? totalHours
     : totalHours.toFixed(1);
-  document.getElementById("totalHoursSub").textContent = records.length
+  document.getElementById("totalHoursSub").textContent = rows.length
     ? `Rata-rata ${numberText(Math.round(averageHours * 10) / 10)} jam/hari`
     : "Belum ada jam tercatat";
   document.getElementById("totalMeal").textContent = money(totalMeal);
@@ -339,9 +393,177 @@ function render() {
   document.getElementById("totalAmountSub").textContent =
     `Lembur ${money(totalWage)} + makan ${money(totalMeal)}`;
 
-  persist();
-  renderRates();
-  renderPreview();
+  drpSyncTriggerFromFilter();
+}
+
+/* PEMILIH RENTANG TANGGAL — kalender dua bulan (gaya ShipmentSchedule).
+   periodStart/periodEnd (disembunyikan lewat .d-none) tetap satu-satunya
+   sumber kebenaran yang dibaca periodRecords() di atas; widget ini cuma
+   lapisan tampilan di atasnya. */
+const HARI_PENDEK = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
+
+// Kotak-kotak satu bulan, SELALU dari Senin, dengan tanggal bulan
+// sebelum/sesudahnya sebagai pengisi (abu-abu, tetap bisa diklik) --
+// requirement umum date-range picker: memilih akhir bulan ini sampai
+// awal bulan depan tanpa harus pindah bulan dulu.
+function drpBuildMonthCells(year, month) {
+  const pertama = new Date(year, month, 1);
+  // getDay(): 0=Minggu..6=Sabtu -> digeser supaya 0=Senin..6=Minggu
+  const mulaiKosong = (pertama.getDay() + 6) % 7;
+  const jumlahHari = new Date(year, month + 1, 0).getDate();
+  const totalSel = Math.ceil((mulaiKosong + jumlahHari) / 7) * 7;
+
+  const sel = [];
+  for (let i = 0; i < totalSel; i++) {
+    const hariKe = i - mulaiKosong + 1;
+    const tgl = new Date(year, month, hariKe);
+    sel.push({
+      iso: toISODate(tgl),
+      label: tgl.getDate(),
+      diLuarBulan: hariKe < 1 || hariKe > jumlahHari,
+    });
+  }
+  return sel;
+}
+
+let drpViewYear = 0;
+let drpViewMonth = 0; // bulan PERTAMA dari dua yang ditampilkan (0-11)
+let drpTempFrom = "";
+let drpTempTo = "";
+
+function drpMonthGridHtml(year, month) {
+  const sel = drpBuildMonthCells(year, month);
+  const baris = [];
+  for (let i = 0; i < sel.length; i += 7) baris.push(sel.slice(i, i + 7));
+  const dari = drpTempFrom,
+    sampai = drpTempTo;
+  const min = dari && sampai ? (dari < sampai ? dari : sampai) : "";
+  const maks = dari && sampai ? (dari < sampai ? sampai : dari) : "";
+
+  const kepala = HARI_PENDEK.map(
+    (h) => `<div class="drp-dow">${h}</div>`,
+  ).join("");
+  const badan = baris
+    .map(
+      (mgg) =>
+        `<div class="drp-week">${mgg
+          .map((c) => {
+            const kelas = ["drp-day"];
+            if (c.diLuarBulan) kelas.push("drp-day--muted");
+            if (c.iso === dari || c.iso === sampai)
+              kelas.push("drp-day--endpoint");
+            else if (min && c.iso > min && c.iso < maks)
+              kelas.push("drp-day--inrange");
+            return `<button type="button" class="${kelas.join(" ")}" data-drp-day="${c.iso}">${c.label}</button>`;
+          })
+          .join("")}</div>`,
+    )
+    .join("");
+  return `<div class="drp-dow-row">${kepala}</div>${badan}`;
+}
+
+function drpRenderCalendars() {
+  drpMonthLabel0.textContent = new Intl.DateTimeFormat("id-ID", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(drpViewYear, drpViewMonth, 1));
+  drpMonthLabel1.textContent = new Intl.DateTimeFormat("id-ID", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(drpViewYear, drpViewMonth + 1, 1));
+  drpGrid0.innerHTML = drpMonthGridHtml(drpViewYear, drpViewMonth);
+  drpGrid1.innerHTML = drpMonthGridHtml(drpViewYear, drpViewMonth + 1);
+}
+
+// Mesin pemilihan: klik pertama = mulai (belum ada akhir, digambar
+// sebagai satu titik). Klik kedua = akhir, DIURUTKAN otomatis (klik
+// tanggal yang lebih awal duluan tidak masalah). Klik berikutnya
+// sesudah pasangan lengkap MULAI LAGI dari nol.
+function drpHandleDayClick(iso) {
+  if (!drpTempFrom || (drpTempFrom && drpTempTo)) {
+    drpTempFrom = iso;
+    drpTempTo = "";
+  } else if (iso < drpTempFrom) {
+    drpTempTo = drpTempFrom;
+    drpTempFrom = iso;
+  } else {
+    drpTempTo = iso;
+  }
+  drpRenderCalendars();
+}
+
+function drpOpen() {
+  const dari = periodStartInput.value;
+  const sampai = periodEndInput.value;
+  drpTempFrom = dari || "";
+  drpTempTo = sampai || "";
+  const acuan = (dari && new Date(dari + "T00:00:00")) || new Date();
+  drpViewYear = acuan.getFullYear();
+  drpViewMonth = acuan.getMonth();
+  drpRenderCalendars();
+  dateRangePopover.classList.remove("d-none");
+  dateRangeTrigger.setAttribute("aria-expanded", "true");
+  dateRangeTrigger.classList.add("is-open");
+}
+
+function drpClose() {
+  dateRangePopover.classList.add("d-none");
+  dateRangeTrigger.setAttribute("aria-expanded", "false");
+  dateRangeTrigger.classList.remove("is-open");
+}
+
+function drpIsOpen() {
+  return !dateRangePopover.classList.contains("d-none");
+}
+
+function drpApply() {
+  // Baru satu tanggal diklik (belum ada akhir) -> jadi rentang sehari.
+  const akhir = drpTempTo || drpTempFrom;
+  const a = drpTempFrom && akhir && drpTempFrom > akhir ? akhir : drpTempFrom;
+  const b = drpTempFrom && akhir && drpTempFrom > akhir ? drpTempFrom : akhir;
+  periodStartInput.value = a || "";
+  periodEndInput.value = b || "";
+  renderSummary();
+  drpClose();
+}
+
+function drpReset() {
+  periodStartInput.value = "";
+  periodEndInput.value = "";
+  renderSummary();
+  drpClose();
+}
+
+// Teks tombol pemicu selalu dari periodStart/End yang SUDAH DITERAPKAN,
+// bukan dari drpTempFrom/To -- supaya tidak nyangkut di teks pratinjau
+// yang belum tentu jadi diterapkan kalau panel ditutup tanpa "Terapkan".
+function drpSyncTriggerFromFilter() {
+  const dari = periodStartInput.value;
+  const sampai = periodEndInput.value;
+  dateRangeTriggerText.textContent =
+    dari && sampai
+      ? `${dateText(dari)}  –  ${dateText(sampai)}`
+      : "Semua Data";
+  dateRangeTrigger.classList.toggle("has-value", !!(dari && sampai));
+  btnClearDateRange.classList.toggle("d-none", !(dari || sampai));
+}
+
+function applyQuickPreset(preset) {
+  const now = new Date();
+  let start, end;
+
+  if (preset === "thisMonth") {
+    start = toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
+    end = toISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  } else {
+    start = toISODate(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    end = toISODate(new Date(now.getFullYear(), now.getMonth(), 0));
+  }
+
+  periodStartInput.value = start;
+  periodEndInput.value = end;
+  renderSummary();
+  drpClose();
 }
 
 function resetForm() {
@@ -374,11 +596,14 @@ function attachThousandFormat(input, onChange) {
   });
 }
 
-function todayString() {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+function toISODate(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 10);
+}
+
+function todayString() {
+  return toISODate(new Date());
 }
 
 function notify(text) {
@@ -464,9 +689,7 @@ form.addEventListener("submit", (e) => {
     notify("Data lembur berhasil diperbarui.");
   } else {
     records.push({
-      id: crypto.randomUUID
-        ? crypto.randomUUID()
-        : Date.now() + "-" + Math.random(),
+      id: makeId(),
       date,
       hours,
       holiday,
@@ -703,6 +926,205 @@ document.getElementById("resetTopBtn").addEventListener("click", () => {
       notify("Semua data berhasil direset.");
     },
   );
+});
+
+// Buka/tutup panel lewat tombol pemicu.
+dateRangeTrigger.addEventListener("click", () => {
+  if (drpIsOpen()) drpClose();
+  else drpOpen();
+});
+
+// Delegasi klik hari: drpHandleDayClick() memanggil drpRenderCalendars(),
+// yang mengganti innerHTML kedua grid -- termasuk tombol yang baru saja
+// diklik. stopPropagation() supaya klik ini tidak lanjut menggelembung
+// ke listener "klik di luar menutup panel" di bawah (elemen yang sudah
+// lepas dari dokumen selalu dianggap "di luar" wrap-nya).
+drpGrids.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-drp-day]");
+  if (!btn) return;
+  event.stopPropagation();
+  drpHandleDayClick(btn.dataset.drpDay);
+});
+
+drpNavPrev.addEventListener("click", (event) => {
+  event.stopPropagation();
+  drpViewMonth--;
+  drpRenderCalendars();
+});
+
+drpNavNext.addEventListener("click", (event) => {
+  event.stopPropagation();
+  drpViewMonth++;
+  drpRenderCalendars();
+});
+
+drpApplyBtn.addEventListener("click", drpApply);
+drpResetBtn.addEventListener("click", drpReset);
+
+quickDateButtons.forEach((btn) => {
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    applyQuickPreset(btn.dataset.preset);
+  });
+});
+
+btnClearDateRange.addEventListener("click", (event) => {
+  event.stopPropagation();
+  periodStartInput.value = "";
+  periodEndInput.value = "";
+  renderSummary();
+});
+
+// Klik di luar popover menutupnya; Escape juga menutupnya (ikut pola
+// modal edit yang sudah ada).
+document.addEventListener("click", (event) => {
+  if (!drpIsOpen()) return;
+  if (!dateRangePicker.contains(event.target)) drpClose();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && drpIsOpen()) drpClose();
+});
+
+// --- Export / Import: memindahkan data ke perangkat lain lewat file JSON,
+// tanpa perlu database eksternal. Import selalu mengganti (bukan
+// menggabungkan) data yang ada supaya hasilnya persis sama dengan file.
+const EXPORT_VERSION = 1;
+
+function buildExportPayload() {
+  return {
+    app: "LemburJourney",
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    baseSalary,
+    records,
+  };
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function validateImportPayload(data) {
+  if (!data || typeof data !== "object" || !Array.isArray(data.records)) {
+    return { ok: false };
+  }
+
+  const cleanRecords = [];
+  data.records.forEach((r) => {
+    if (!r || typeof r !== "object") return;
+    const date = typeof r.date === "string" ? r.date : "";
+    const hours = Number(r.hours);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !Number.isFinite(hours) ||
+      hours <= 0
+    ) {
+      return;
+    }
+
+    cleanRecords.push({
+      id: typeof r.id === "string" && r.id ? r.id : makeId(),
+      date,
+      hours,
+      holiday: Boolean(r.holiday),
+      baseSalary: Number(r.baseSalary) > 0 ? Number(r.baseSalary) : 0,
+      createdAt: Number.isFinite(Number(r.createdAt))
+        ? Number(r.createdAt)
+        : Date.now(),
+    });
+  });
+
+  const salary = Number(data.baseSalary);
+
+  return {
+    ok: true,
+    records: cleanRecords,
+    baseSalary: Number.isFinite(salary) && salary > 0 ? salary : 0,
+  };
+}
+
+exportBtn.addEventListener("click", () => {
+  if (!records.length && !baseSalary) {
+    notify("Belum ada data untuk diexport.");
+    return;
+  }
+
+  downloadJSON(
+    `lemburjourney-backup-${todayString()}.json`,
+    buildExportPayload(),
+  );
+  notify(
+    records.length
+      ? `Data berhasil diexport · ${records.length} pencatatan.`
+      : "Data berhasil diexport.",
+  );
+});
+
+importBtn.addEventListener("click", () => {
+  importFileInput.value = "";
+  importFileInput.click();
+});
+
+importFileInput.addEventListener("change", () => {
+  const file = importFileInput.files && importFileInput.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(reader.result);
+    } catch {
+      notify(
+        "File tidak valid. Pastikan file adalah hasil export LemburJourney.",
+      );
+      return;
+    }
+
+    const result = validateImportPayload(parsed);
+    if (!result.ok) {
+      notify("Format file tidak dikenali.");
+      return;
+    }
+
+    const runImport = () => {
+      closeEditModal();
+      records = result.records;
+      baseSalary = result.baseSalary;
+      persist();
+      persistSalary();
+      baseSalaryInput.value = groupThousands(baseSalary);
+      resetForm();
+      render();
+      notify(`Import berhasil · ${records.length} pencatatan dimuat.`);
+    };
+
+    if (records.length || baseSalary) {
+      showConfirmToast(
+        "Timpa data saat ini?",
+        `Import akan mengganti ${records.length} pencatatan yang tersimpan saat ini dengan ${result.records.length} pencatatan dari file.`,
+        "Ya, timpa",
+        runImport,
+      );
+    } else {
+      runImport();
+    }
+  };
+
+  reader.onerror = () => notify("Gagal membaca file.");
+  reader.readAsText(file);
 });
 
 baseSalaryInput.value = groupThousands(baseSalary);
