@@ -13,6 +13,7 @@ let records = load();
 let baseSalary = loadSalary();
 let editingId = null;
 let searchTerm = "";
+const selectedIds = new Set();
 
 const form = document.getElementById("overtimeForm");
 const dateInput = document.getElementById("date");
@@ -22,6 +23,15 @@ const holidayPanel = document.getElementById("holidayPanel");
 const submitBtn = document.getElementById("submitBtn");
 const tableBody = document.getElementById("tableBody");
 const searchInput = document.getElementById("search");
+const selectAllInput = document.getElementById("selectAll");
+const bulkBar = document.getElementById("bulkBar");
+const bulkCount = document.getElementById("bulkCount");
+const bulkClearBtn = document.getElementById("bulkClearBtn");
+const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
+const monthDelete = document.getElementById("monthDelete");
+const monthDeleteBtn = document.getElementById("monthDeleteBtn");
+const monthPop = document.getElementById("monthPop");
+const monthList = document.getElementById("monthList");
 const datePickerWrap = document.getElementById("datePickerWrap");
 const dateClickOverlay = document.getElementById("dateClickOverlay");
 const baseSalaryInput = document.getElementById("baseSalary");
@@ -256,10 +266,13 @@ function setHolidayVisual() {
   holidayPanel.classList.toggle("active", holidayInput.checked);
 }
 
+// Baris riwayat = data dalam rentang tanggal yang diterapkan (periodRecords)
+// lalu disaring lagi oleh kata pencarian.
 function filtered() {
+  const inRange = periodRecords();
   const q = searchTerm.trim().toLowerCase();
-  if (!q) return records;
-  return records.filter((r) =>
+  if (!q) return inRange;
+  return inRange.filter((r) =>
     [r.date, dayName(r.date), dateText(r.date), String(r.hours)]
       .join(" ")
       .toLowerCase()
@@ -275,14 +288,20 @@ function render() {
   const rows = filtered();
   tableBody.innerHTML = "";
 
+  // Pilihan hanya berlaku untuk baris yang sedang tampil.
+  const visibleIds = new Set(rows.map((r) => r.id));
+  selectedIds.forEach((id) => {
+    if (!visibleIds.has(id)) selectedIds.delete(id);
+  });
+
   if (!rows.length) {
     tableBody.innerHTML = `
     <tr>
-      <td colspan="9">
+      <td colspan="10">
         <div class="empty">
           <div class="empty-icon"><i class="bi bi-inbox"></i></div>
           <div class="fw-bold text-dark mb-1">${records.length ? "Data tidak ditemukan" : "Belum ada pencatatan"}</div>
-          <div>${records.length ? "Coba gunakan kata pencarian yang berbeda." : "Tambahkan data lembur menggunakan form di atas."}</div>
+          <div>${records.length ? "Coba ubah kata pencarian atau rentang tanggal." : "Tambahkan data lembur menggunakan form di atas."}</div>
         </div>
       </td>
     </tr>`;
@@ -296,7 +315,10 @@ function render() {
       tableBody.insertAdjacentHTML(
         "beforeend",
         `
-      <tr>
+      <tr class="${selectedIds.has(r.id) ? "is-selected" : ""}">
+        <td class="check-col">
+          <input type="checkbox" class="form-check-input row-check" data-id="${r.id}" aria-label="Pilih ${dateText(r.date)}" ${selectedIds.has(r.id) ? "checked" : ""} />
+        </td>
         <td class="fw-semibold text-secondary">${i + 1}</td>
         <td class="fw-semibold">${dateText(r.date)}</td>
         <td>${dayName(r.date)}</td>
@@ -332,10 +354,21 @@ function render() {
     });
   }
 
+  renderBulkBar(rows.length);
   persist();
   renderRates();
   renderPreview();
   renderSummary();
+}
+
+// Bar aksi massal + status kotak "pilih semua" (tak terpilih / sebagian / semua).
+function renderBulkBar(visibleCount) {
+  const n = selectedIds.size;
+  bulkBar.hidden = n === 0;
+  bulkCount.textContent = n;
+  selectAllInput.disabled = visibleCount === 0;
+  selectAllInput.checked = visibleCount > 0 && n === visibleCount;
+  selectAllInput.indeterminate = n > 0 && n < visibleCount;
 }
 
 // Rentang tanggal bersifat inklusif di kedua ujung; batas yang dikosongkan
@@ -353,9 +386,9 @@ function periodRecords() {
   return records.filter((r) => inPeriod(r.date, start, end));
 }
 
-// Satu-satunya kartu ringkasan: defaultnya seluruh data (periodStart/End
-// kosong), atau disaring ke rentang yang sedang diterapkan lewat
-// date-range-picker di bawah.
+// Kartu ringkasan: defaultnya seluruh data (periodStart/End kosong), atau
+// disaring ke rentang yang sedang diterapkan lewat date-range-picker.
+// Tabel riwayat memakai rentang yang sama (lihat filtered()).
 function renderSummary() {
   const rows = periodRecords();
 
@@ -383,6 +416,7 @@ function renderSummary() {
   document.getElementById("totalHoursSub").textContent = rows.length
     ? `Rata-rata ${numberText(Math.round(averageHours * 10) / 10)} jam/hari`
     : "Belum ada jam tercatat";
+  document.getElementById("totalWage").textContent = money(totalWage);
   document.getElementById("totalMeal").textContent = money(totalMeal);
   document.getElementById("totalMealSub").textContent = mealDays
     ? `${mealDays} hari × ${money(MEAL_ALLOWANCE)}`
@@ -523,14 +557,14 @@ function drpApply() {
   const b = drpTempFrom && akhir && drpTempFrom > akhir ? drpTempFrom : akhir;
   periodStartInput.value = a || "";
   periodEndInput.value = b || "";
-  renderSummary();
+  render();
   drpClose();
 }
 
 function drpReset() {
   periodStartInput.value = "";
   periodEndInput.value = "";
-  renderSummary();
+  render();
   drpClose();
 }
 
@@ -562,7 +596,7 @@ function applyQuickPreset(preset) {
 
   periodStartInput.value = start;
   periodEndInput.value = end;
-  renderSummary();
+  render();
   drpClose();
 }
 
@@ -806,6 +840,132 @@ tableBody.addEventListener("click", (event) => {
   }
 });
 
+// Ceklis per baris.
+tableBody.addEventListener("change", (event) => {
+  const box = event.target.closest(".row-check");
+  if (!box) return;
+
+  if (box.checked) selectedIds.add(box.dataset.id);
+  else selectedIds.delete(box.dataset.id);
+
+  box.closest("tr").classList.toggle("is-selected", box.checked);
+  renderBulkBar(filtered().length);
+});
+
+// Pilih semua / batal semua pada baris yang sedang tampil.
+selectAllInput.addEventListener("change", () => {
+  if (selectAllInput.checked) filtered().forEach((r) => selectedIds.add(r.id));
+  else selectedIds.clear();
+  render();
+});
+
+bulkClearBtn.addEventListener("click", () => {
+  selectedIds.clear();
+  render();
+});
+
+bulkDeleteBtn.addEventListener("click", () => {
+  const ids = new Set(selectedIds);
+  if (!ids.size) return;
+
+  showConfirmToast(
+    "Hapus data terpilih?",
+    `${ids.size} pencatatan akan dihapus permanen.`,
+    "Ya, hapus",
+    () => {
+      records = records.filter((x) => !ids.has(x.id));
+      selectedIds.clear();
+
+      persist();
+      render();
+      notify(`${ids.size} data berhasil dihapus.`);
+    },
+  );
+});
+
+// Hapus per bulan: daftar bulan dibentuk otomatis dari tanggal seluruh data
+// (bukan dari filter), jadi hanya bulan yang memang punya data yang muncul.
+function monthLabel(key) {
+  return new Intl.DateTimeFormat("id-ID", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(key + "-01T00:00:00"));
+}
+
+function renderMonthList() {
+  const counts = new Map();
+  records.forEach((r) => {
+    const key = r.date.slice(0, 7);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  const keys = [...counts.keys()].sort().reverse();
+  monthList.innerHTML = keys.length
+    ? keys
+        .map(
+          (key) => `
+      <div class="month-item">
+        <div>
+          <div class="month-name">${monthLabel(key)}</div>
+          <div class="month-count">${counts.get(key)} data</div>
+        </div>
+        <button type="button" class="btn btn-light border text-danger btn-sm row-action" data-month="${key}" title="Hapus data ${monthLabel(key)}">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </div>`,
+        )
+        .join("")
+    : `<div class="month-empty">Belum ada data.</div>`;
+}
+
+function monthPopIsOpen() {
+  return !monthPop.hidden;
+}
+
+function closeMonthPop() {
+  monthPop.hidden = true;
+  monthDeleteBtn.setAttribute("aria-expanded", "false");
+}
+
+monthDeleteBtn.addEventListener("click", () => {
+  if (monthPopIsOpen()) {
+    closeMonthPop();
+    return;
+  }
+  renderMonthList();
+  monthPop.hidden = false;
+  monthDeleteBtn.setAttribute("aria-expanded", "true");
+});
+
+monthList.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-month]");
+  if (!btn) return;
+
+  const key = btn.dataset.month;
+  const count = records.filter((r) => r.date.startsWith(key)).length;
+  closeMonthPop();
+
+  showConfirmToast(
+    `Hapus data ${monthLabel(key)}?`,
+    `${count} pencatatan di bulan ini akan dihapus permanen. Bulan lain tidak terpengaruh.`,
+    "Ya, hapus",
+    () => {
+      records = records.filter((r) => !r.date.startsWith(key));
+      persist();
+      render();
+      notify(`${count} data ${monthLabel(key)} berhasil dihapus.`);
+    },
+  );
+});
+
+document.addEventListener("click", (event) => {
+  if (monthPopIsOpen() && !monthDelete.contains(event.target)) closeMonthPop();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && monthPopIsOpen()) closeMonthPop();
+});
+
 function setEditHolidayVisual() {
   editHolidayPanel.classList.toggle("active", editHolidayInput.checked);
 }
@@ -972,7 +1132,7 @@ btnClearDateRange.addEventListener("click", (event) => {
   event.stopPropagation();
   periodStartInput.value = "";
   periodEndInput.value = "";
-  renderSummary();
+  render();
 });
 
 // Klik di luar popover menutupnya; Escape juga menutupnya (ikut pola

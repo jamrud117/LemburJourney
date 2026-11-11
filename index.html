@@ -274,9 +274,10 @@
           <div>
             <h2>Ringkasan</h2>
             <p>
-              Total hari, jam, uang makan, dan penerimaan lembur. Defaultnya
-              seluruh data — pilih rentang tanggal untuk periode tertentu,
-              misalnya satu periode gajian.
+              Total hari, jam, uang lembur, uang makan, dan penerimaan.
+              Defaultnya seluruh data — pilih rentang tanggal untuk periode
+              tertentu, misalnya satu periode gajian. Riwayat di bawah ikut
+              menampilkan periode yang sama.
             </p>
           </div>
           <div class="heading-actions">
@@ -392,6 +393,15 @@
 
           <div class="app-card summary-card">
             <div class="summary-top">
+              <div class="summary-icon"><i class="bi bi-wallet2"></i></div>
+              <div class="summary-label">TOTAL UANG LEMBUR</div>
+            </div>
+            <div class="summary-value summary-money" id="totalWage">Rp0</div>
+            <div class="summary-sub">Murni upah lembur, tanpa uang makan</div>
+          </div>
+
+          <div class="app-card summary-card">
+            <div class="summary-top">
               <div class="summary-icon"><i class="bi bi-cup-hot"></i></div>
               <div class="summary-label">TOTAL UANG MAKAN</div>
             </div>
@@ -423,6 +433,22 @@
             </p>
           </div>
 
+          <div class="history-tools">
+          <div class="month-delete" id="monthDelete">
+            <button
+              type="button"
+              class="btn btn-light border btn-sm px-3"
+              id="monthDeleteBtn"
+              aria-haspopup="true"
+              aria-expanded="false"
+            >
+              <i class="bi bi-calendar-x me-1"></i> Hapus per bulan
+            </button>
+            <div class="month-pop" id="monthPop" hidden>
+              <div class="month-pop-title">Pilih bulan yang dihapus</div>
+              <div class="month-list" id="monthList"></div>
+            </div>
+          </div>
           <div class="search-wrap">
             <div class="input-group input-group-sm">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -434,12 +460,44 @@
               />
             </div>
           </div>
+          </div>
+        </div>
+
+        <div class="bulk-bar" id="bulkBar" hidden>
+          <div class="bulk-info">
+            <i class="bi bi-check2-square"></i>
+            <span><strong id="bulkCount">0</strong> data dipilih</span>
+          </div>
+          <div class="bulk-actions">
+            <button
+              type="button"
+              class="btn btn-light border btn-sm px-3"
+              id="bulkClearBtn"
+            >
+              Batal pilih
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger-soft btn-sm px-3"
+              id="bulkDeleteBtn"
+            >
+              <i class="bi bi-trash3 me-1"></i> Hapus terpilih
+            </button>
+          </div>
         </div>
 
         <div class="table-wrap">
           <table class="table align-middle">
             <thead>
               <tr>
+                <th class="check-col">
+                  <input
+                    type="checkbox"
+                    class="form-check-input row-check"
+                    id="selectAll"
+                    aria-label="Pilih semua data yang tampil"
+                  />
+                </th>
                 <th>No</th>
                 <th>Tanggal</th>
                 <th>Hari</th>
